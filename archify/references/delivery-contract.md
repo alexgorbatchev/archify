@@ -450,7 +450,7 @@ command is:
 node bin/archify.mjs browser-check <output.html> --json --require-provenance
 ```
 
-The zero-dependency command uses Chrome/Chromium (or Microsoft Edge)
+By default, the zero-dependency command uses Chrome/Chromium (or Microsoft Edge)
 through the DevTools pipe. `ARCHIFY_CHROME` is authoritative when set, including
 an invalid path: Archify does not silently fall back to another browser. Automatic
 Windows discovery checks every Chrome/Chromium install location and PATH command
@@ -467,6 +467,37 @@ Pass `--out-dir <dir>` to place the receipt in a separate evidence directory.
 The receipt binds the artifact SHA-256 and byte count, identifies
 `evidenceKind: "automated-browser"`, and reports
 `visualReview: "not-requested"`.
+
+### Externally managed CDP browser
+
+Set `ARCHIFY_CDP_URL` to a browser-level `ws://` or `wss://` DevTools endpoint
+to reuse an externally managed Chromium browser. This mode requires Node.js 22
+or newer with native WebSocket support. It takes precedence over
+`ARCHIFY_CHROME`, skips browser discovery and launch, and fails explicitly if the
+configured endpoint is invalid or unavailable. It never falls back to a local
+browser. Leave the variable unset to use the default DevTools pipe launcher.
+
+Archify creates a private browser context for its checks and disposes that context
+when finished. The caller retains ownership of browser startup, existing tabs,
+and shutdown. Receipts identify the connection as `external-cdp` without storing
+the endpoint, which may contain credentials. The browser must be able to read
+Archify's local temporary artifact files at the same filesystem paths; an endpoint
+alone does not provide remote artifact upload or filesystem sharing.
+
+For agent-browser, run these steps from the skill directory:
+
+1. Start a dedicated session with local file access:
+   `agent-browser --session archify-check --allow-file-access open about:blank`.
+2. Run the check with the session's endpoint:
+   `ARCHIFY_CDP_URL="$(agent-browser --session archify-check get cdp-url)" node bin/archify.mjs browser-check <output.html> --json --require-provenance`.
+3. Close the session, including after a failed check:
+   `agent-browser --session archify-check close`.
+
+Acquire the endpoint after starting the session; it changes when the browser
+restarts. Configure any host-specific launch flags in the browser provider.
+Archify does not add launch flags or require agent-browser as a dependency.
+
+### Measurement policy
 
 Horizontal overflow always fails. Normal document-level vertical scrolling is
 accepted only with a renderer-declared contract and measured readable text.

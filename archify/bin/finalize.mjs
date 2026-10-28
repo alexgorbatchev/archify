@@ -964,6 +964,7 @@ export async function runFinalize({
   // Resolve and launch Chrome only after delivery and strict artifact checks pass.
   // Invalid candidates must not start a browser that cannot inspect an artifact.
   let chromePath = null;
+  const cdpUrl = env.ARCHIFY_CDP_URL;
   let browser;
   let browserStartupError;
   let browserTransferred = false;
@@ -1015,9 +1016,9 @@ export async function runFinalize({
           // The original resources changed between gates; do not run another gate on them.
         } else if (inProcess) {
           try {
-            chromePath = resolveChrome({ env });
-            if (chromePath) {
-              browser = createBrowser(chromePath, { env });
+            chromePath = cdpUrl !== undefined ? null : resolveChrome({ env });
+            if (cdpUrl !== undefined || chromePath) {
+              browser = createBrowser(chromePath, { env, cdpUrl });
               // Retain the startup rejection for the browser gate without emitting
               // an unhandled rejection before inspect() awaits the same promise.
               browser.sessionPromise.catch(() => {});
@@ -1025,8 +1026,8 @@ export async function runFinalize({
           } catch (error) {
             browserStartupError = error;
           }
-          // Discovery errors have no executable for the browser factory. Record
-          // a failed gate instead of treating them as ordinary Chrome absence.
+          // Discovery or external connection errors have no executable for the
+          // browser factory. Record failure instead of ordinary Chrome absence.
           const checked = browserStartupError && !chromePath
             ? { exitCode: 1, receipt: persistBrowserCheckFailure(resolvedOutput, {
               schemaVersion: 1, ok: false, command: 'browser-check', status: 'fail',
@@ -1034,16 +1035,17 @@ export async function runFinalize({
               error: browserStartupError.message,
               diagnostics: [{
                 code: 'viewer/browser-check-runtime', severity: 'error',
-                message: 'browser-check could not discover Chrome.',
+                message: cdpUrl !== undefined ? 'browser-check could not connect to the configured CDP browser.' : 'browser-check could not discover Chrome.',
                 subject: { artifact: resolvedOutput },
                 evidence: { reason: browserStartupError.message },
-                supportedFixes: ['resolve the reported Chrome discovery error, then rerun browser-check'],
+                supportedFixes: [cdpUrl !== undefined ? 'verify ARCHIFY_CDP_URL and browser availability, then rerun browser-check' : 'resolve the reported Chrome discovery error, then rerun browser-check'],
               }],
             }, { outDir: resolvedOutDir }) }
             : await runBrowserCheck({
               artifactPath: resolvedOutput,
               outDir: resolvedOutDir,
               chromePath,
+              cdpUrl,
               resolveChrome: () => chromePath,
               browserFactory,
             });

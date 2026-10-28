@@ -1,3 +1,4 @@
+import { CdpConnection, WebSocketCdp } from "./cdp.mjs";
 import { softwareNoticesHtml } from '../renderers/shared/software-notices.mjs';
 import { spawn } from 'node:child_process';
 import { isExplainerHtml } from '../explainer/check.mjs';
@@ -1381,19 +1382,16 @@ export function findChrome({
   return null;
 }
 
-class PipeCdp {
+class PipeCdp extends CdpConnection {
   constructor(child, { failureDetails = () => '' } = {}) {
+    super();
     this.child = child;
     this.failureDetails = failureDetails;
-    this.nextId = 1;
     this.buffer = '';
     this.receivedBytes = 0;
     this.receivedMessages = 0;
     this.completedWrites = 0;
     this.writtenBytes = 0;
-    this.pending = new Map();
-    this.waiters = [];
-    this.subscribers = new Set();
     this.writePipe = child.stdio[3];
     this.readPipe = child.stdio[4];
     this.readPipe.setEncoding('utf8');
@@ -1433,90 +1431,20 @@ class PipeCdp {
       const raw = this.buffer.slice(0, boundary);
       this.buffer = this.buffer.slice(boundary + 1);
       if (!raw) continue;
-      let message;
-      try {
-        message = JSON.parse(raw);
-      } catch (error) {
-        this.failAll(new Error(`Chrome DevTools returned invalid JSON: ${error.message}`));
-        continue;
-      }
       this.receivedMessages += 1;
-      if (message.id) {
-        const pending = this.pending.get(message.id);
-        if (!pending) continue;
-        clearTimeout(pending.timer);
-        this.pending.delete(message.id);
-        if (message.error) pending.reject(new Error(`${pending.method}: ${message.error.message}`));
-        else pending.resolve(message.result || {});
-        continue;
-      }
-      for (const subscriber of this.subscribers) subscriber(message);
-      for (const waiter of [...this.waiters]) {
-        if (waiter.method !== message.method) continue;
-        if (waiter.sessionId && waiter.sessionId !== message.sessionId) continue;
-        clearTimeout(waiter.timer);
-        this.waiters.splice(this.waiters.indexOf(waiter), 1);
-        waiter.resolve(message.params || {});
-      }
+      this.receive(raw);
     }
   }
 
-  subscribe(callback) {
-    this.subscribers.add(callback);
-    return () => this.subscribers.delete(callback);
-  }
-
-  send(method, params = {}, sessionId = undefined, timeoutMs = 15000) {
-    const id = this.nextId++;
-    const message = { id, method, params };
-    if (sessionId) message.sessionId = sessionId;
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        const error = new Error(`${method}: timed out after ${timeoutMs}ms`);
-        error.code = 'ERR_CHROME_CDP_TIMEOUT';
-        error.method = method;
-        reject(this.failure('protocol timeout', error));
-      }, timeoutMs);
-      this.pending.set(id, { method, resolve, reject, timer });
-      try {
-        const serialized = `${JSON.stringify(message)}\0`;
-        this.writePipe.write(serialized, (error) => {
-          if (error) {
-            this.failAll(this.failure('write pipe', error));
-          } else {
-            this.completedWrites += 1;
-            this.writtenBytes += Buffer.byteLength(serialized);
-          }
-        });
-      } catch (error) {
-        this.failAll(this.failure('write pipe', error));
+  write(message) {
+    const serialized = `${message}\0`;
+    this.writePipe.write(serialized, (error) => {
+      if (error) this.failAll(this.failure('write pipe', error));
+      else {
+        this.completedWrites += 1;
+        this.writtenBytes += Buffer.byteLength(serialized);
       }
     });
-  }
-
-  waitFor(method, sessionId, timeoutMs = 15000) {
-    return new Promise((resolve, reject) => {
-      const waiter = { method, sessionId, resolve, reject, timer: null };
-      waiter.timer = setTimeout(() => {
-        this.waiters.splice(this.waiters.indexOf(waiter), 1);
-        reject(this.failure('event timeout', new Error(`${method}: event timed out after ${timeoutMs}ms`)));
-      }, timeoutMs);
-      this.waiters.push(waiter);
-    });
-  }
-
-  failAll(error) {
-    for (const pending of this.pending.values()) {
-      clearTimeout(pending.timer);
-      pending.reject(error);
-    }
-    for (const waiter of this.waiters) {
-      clearTimeout(waiter.timer);
-      waiter.reject(error);
-    }
-    this.pending.clear();
-    this.waiters = [];
   }
 }
 
@@ -1582,7 +1510,16 @@ export class ChromeVisualBrowser {
     spawnImpl = spawn,
     startupTimeoutMs = CHROME_STARTUP_TIMEOUT_MS,
     shutdownTimeoutMs = 1500,
+    cdpUrl,
+    WebSocketImpl,
   } = {}) {
+    this.startupTimeoutMs = startupTimeoutMs;
+    if (cdpUrl !== undefined) {
+      this.externalCdp = true;
+      this.cdp = new WebSocketCdp(cdpUrl, { WebSocketImpl, timeoutMs: startupTimeoutMs });
+      this.sessionPromise = this.attach();
+      return;
+    }
     this.#profile = createOwnedTempDirectory('archify-visual-check-profile-');
     this.profileRoot = this.#profile.path;
     this.shutdownTimeoutMs = shutdownTimeoutMs;
@@ -1621,16 +1558,26 @@ export class ChromeVisualBrowser {
   }
 
   async attach() {
-    // Process launch can be delayed substantially on a busy desktop. Keep the
-    // longer allowance inside one gate invocation so an authoring agent does
-    // not turn startup jitter into repeated tool calls or candidate edits.
-    const targets = await this.cdp.send(
-      'Target.getTargets', {}, undefined, this.startupTimeoutMs,
-    );
-    let target = targets.targetInfos?.find((item) => item.type === 'page');
-    if (!target) {
-      const created = await this.cdp.send('Target.createTarget', { url: 'about:blank' });
-      target = { targetId: created.targetId };
+    let target;
+    if (this.externalCdp) {
+      await this.cdp.ready;
+      const context = await this.cdp.send('Target.createBrowserContext', { disposeOnDetach: true });
+      this.browserContextId = context.browserContextId;
+      target = await this.cdp.send('Target.createTarget', {
+        url: 'about:blank', browserContextId: this.browserContextId,
+      });
+    } else {
+      // Process launch can be delayed substantially on a busy desktop. Keep the
+      // longer allowance inside one gate invocation so an authoring agent does
+      // not turn startup jitter into repeated tool calls or candidate edits.
+      const targets = await this.cdp.send(
+        'Target.getTargets', {}, undefined, this.startupTimeoutMs,
+      );
+      target = targets.targetInfos?.find((item) => item.type === 'page');
+      if (!target) {
+        const created = await this.cdp.send('Target.createTarget', { url: 'about:blank' });
+        target = { targetId: created.targetId };
+      }
     }
     this.targetId = target.targetId;
     const attached = await this.cdp.send('Target.attachToTarget', {
@@ -1645,7 +1592,10 @@ export class ChromeVisualBrowser {
   async resetPage() {
     await this.sessionPromise;
     const previousTarget = this.targetId;
-    const created = await this.cdp.send('Target.createTarget', { url: 'about:blank' });
+    const created = await this.cdp.send('Target.createTarget', {
+      url: 'about:blank',
+      ...(this.browserContextId ? { browserContextId: this.browserContextId } : {}),
+    });
     const attached = await this.cdp.send('Target.attachToTarget', { targetId: created.targetId, flatten: true });
     await this.cdp.send('Page.enable', {}, attached.sessionId);
     await this.cdp.send('Runtime.enable', {}, attached.sessionId);
@@ -1896,6 +1846,17 @@ export class ChromeVisualBrowser {
   }
 
   async finishClose() {
+    if (this.externalCdp) {
+      try {
+        await this.sessionPromise.catch(() => {});
+        if (this.browserContextId && !this.cdp.closedError) {
+          await this.cdp.send('Target.disposeBrowserContext', { browserContextId: this.browserContextId });
+        }
+      } finally {
+        this.cdp.close();
+      }
+      return;
+    }
     this.cdp.failAll(new Error('visual-check finished'));
     try {
       if (this.child.exitCode === null && this.child.signalCode === null) {
@@ -2459,8 +2420,9 @@ async function runBrowserEvidence({
   artifactPath,
   outDir,
   chromePath,
+  cdpUrl = process.env.ARCHIFY_CDP_URL,
   resolveChrome = findChrome,
-  browserFactory = async (resolvedChrome) => new ChromeVisualBrowser(resolvedChrome),
+  browserFactory = async (resolvedChrome, options) => new ChromeVisualBrowser(resolvedChrome, options),
   deliveryProvenance,
   verifyArtifact,
   compareSidecarParents = sameParent,
@@ -2556,12 +2518,15 @@ async function runBrowserEvidence({
     }, { outDir, compareSidecarParents, ownership, command, capture, captureViewports }) };
   }
 
-  const resolvedChrome = chromePath || resolveChrome();
-  receipt.chrome = resolvedChrome
+  const externalCdp = cdpUrl !== undefined;
+  const resolvedChrome = externalCdp ? null : chromePath || resolveChrome();
+  receipt.chrome = externalCdp
+    ? { status: 'available', executable: null, connection: 'external-cdp' }
+    : resolvedChrome
     ? { status: 'available', executable: resolvedChrome }
     : { status: 'unavailable', executable: null };
 
-  if (!resolvedChrome) {
+  if (!externalCdp && !resolvedChrome) {
     receipt.status = 'skipped';
     receipt.containment.status = 'skipped';
     receipt.readability.status = 'skipped';
@@ -2591,7 +2556,7 @@ async function runBrowserEvidence({
 
   let browser;
   try {
-    browser = await browserFactory(resolvedChrome);
+    browser = await browserFactory(resolvedChrome, { cdpUrl });
     const observations = new Map();
     const screenshotsByKey = new Map(outputs.screenshots.map((entry, index) => [
       screenshotKey(entry.width, entry.height, entry.theme),

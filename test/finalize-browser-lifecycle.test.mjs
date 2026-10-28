@@ -192,6 +192,41 @@ test('finalize launches Chrome only after delivery and strict artifact checks pa
   assert.deepEqual(events, ['run:deliver', 'run:check', 'create', 'inspect', 'close']);
 });
 
+test('finalize reuses configured external CDP without discovering or launching Chrome', async t => {
+  const { input, output, outDir, source } = inputs(t);
+  const events = [];
+  const cdpUrl = 'ws://localhost:9222/devtools/browser/test';
+  let delivered;
+  const finalized = await runFinalize({
+    ...options({
+      input, output, outDir,
+      resolveChrome() { throw new Error('external CDP must skip discovery'); },
+      createBrowser(chromePath, browserOptions) {
+        assert.equal(chromePath, null);
+        assert.equal(browserOptions.cdpUrl, cdpUrl);
+        return browser(events);
+      },
+      runCommand({ stage }) {
+        if (stage === 'deliver') {
+          delivered = delivery({ input, output, source });
+          return stageResult(delivered);
+        }
+        return stageResult(check(output, delivered));
+      },
+      async runBrowserCheck({ browserFactory, cdpUrl: endpoint }) {
+        assert.equal(endpoint, cdpUrl);
+        const reusable = browserFactory();
+        await reusable.inspect();
+        await reusable.close();
+        return { exitCode: 0, receipt: browserReceipt(output, delivered, outDir) };
+      },
+    }),
+    env: { ARCHIFY_CDP_URL: cdpUrl, ARCHIFY_UPDATE_CHECK_DISABLED: '1' },
+  });
+  assert.equal(finalized.exitCode, 0);
+  assert.deepEqual(events, ['inspect', 'close']);
+});
+
 test('finalize does not discover or launch Chrome when delivery or strict checks fail', async t => {
   for (const failedStage of ['deliver', 'check']) {
     const { input, output, outDir, source } = inputs(t);

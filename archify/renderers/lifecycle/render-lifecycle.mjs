@@ -205,7 +205,7 @@ const isFinal = (state) => !outgoing.has(state.id);
 
 // Each round tries ports pulled toward their partners and ports spread evenly,
 // and keeps the placed layout with the fewest bends and short jogs.
-let spacing = { spineGap: 72, rowGap: 44, drop: 58, firstTrack: 34 };
+let spacing = { spineGap: 72, rowGap: 44, drop: 58, firstTrack: 34, trackStep: TRACK_STEP };
 let geometry;
 // Labels that could not be placed at tighter spacing and prompted retries.
 const spacingWideners = new Set();
@@ -226,7 +226,9 @@ for (let round = 0; round < SPACING_ROUNDS; round += 1) {
   const nextMainPathWidth = MARGIN_X * 2 + mainPathStateWidth
     + minimumSpineGaps.reduce((sum, minimum) => sum + Math.max(nextSpineGap, minimum), 0);
   spacing = { spineGap: nextMainPathWidth > readableWidthBudget ? spacing.spineGap : nextSpineGap,
-    rowGap: spacing.rowGap + 28, drop: spacing.drop + 14, firstTrack: spacing.firstTrack + 6 };
+    // Separate the tracks too: a larger row gap alone leaves labels trapped
+    // between adjacent horizontal runs at the original track spacing.
+    rowGap: spacing.rowGap + 28, drop: spacing.drop + 14, firstTrack: spacing.firstTrack + 6, trackStep: spacing.trackStep + 14 };
 }
 
 function routeCost(routes) {
@@ -241,7 +243,7 @@ function routeCost(routes) {
   return cost;
 }
 
-function layout({ spineGap, rowGap, drop, firstTrack, ports: portMode }) {
+function layout({ spineGap, rowGap, drop, firstTrack, trackStep, ports: portMode }) {
   // Main-path x positions: each gap fits its row label.
   let cursor = MARGIN_X;
   mainPath.forEach((id, index) => {
@@ -402,7 +404,7 @@ function layout({ spineGap, rowGap, drop, firstTrack, ports: portMode }) {
     }
     const bottom = rowTop[row] + rowHeights[row];
     const count = assignTracks(runs.filter((run) => run.connector.gap === row));
-    trackY[row] = (track) => bottom + firstTrack + track * TRACK_STEP;
+    trackY[row] = (track) => bottom + firstTrack + track * trackStep;
     if (row + 1 < rowCount) rowTop.push((count ? trackY[row](count - 1) : bottom + firstTrack) + drop);
   }
   const rowBottom = (row) => rowTop[row] + rowHeights[row];

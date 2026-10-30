@@ -190,6 +190,32 @@ test('README motion proof is compact, looping, and backed by current gallery art
   }
 });
 
+test('showcase Chrome launch honors only explicit sandbox opt-out or root ownership', async () => {
+  const showcase = await import(pathToFileURL(path.join(repoRoot, 'scripts', 'build-readme-showcase.mjs')).href);
+  for (const [env, uid, expected] of [
+    [{ ARCHIFY_CHROME_NO_SANDBOX: '1' }, 1000, true],
+    [{ ARCHIFY_CHROME_NO_SANDBOX: '0' }, 1000, false],
+    [{}, 1000, false],
+    [{}, 0, true],
+  ]) {
+    const child = new EventEmitter();
+    const args = ['--remote-debugging-pipe', 'about:blank'];
+    const launched = showcase.launchChrome('/chrome', args, {
+      env, uid,
+      spawnCommand(executable, actualArgs, options) {
+        assert.equal(executable, '/chrome');
+        assert.equal(actualArgs.includes('--no-sandbox'), expected);
+        assert.deepEqual(actualArgs.filter(arg => arg !== '--no-sandbox'), args);
+        assert.equal(options.env, env);
+        assert.deepEqual(options.stdio, ['ignore', 'ignore', 'pipe', 'pipe', 'pipe']);
+        return child;
+      },
+    });
+    assert.equal(launched, child);
+    assert.deepEqual(args, ['--remote-debugging-pipe', 'about:blank']);
+  }
+});
+
 test('Windows command lookup and ffmpeg launch keep their boundary diagnostics', async () => {
   const showcase = await import(pathToFileURL(path.join(repoRoot, 'scripts', 'build-readme-showcase.mjs')).href);
   const selected = String.raw`C:\Tools\ffmpeg.EXE`;

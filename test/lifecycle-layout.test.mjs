@@ -89,6 +89,37 @@ test('a lower state aligns its eligible complete return-port group', () => {
   }
 });
 
+test('distinct held-state exits keep labels clear beside crowded vertical routes', () => {
+  const result = render(base({
+    mainPath: ['loading', 'idle', 'auditioning'],
+    states: [
+      state('loading', 'start', 'Loading'),
+      state('idle', 'active', 'Ready · idle'),
+      state('pressed', 'active', 'Ready · pressed'),
+      state('auditioning', 'active', 'Ready · auditioning'),
+      state('armed', 'active', 'Ready · armed'),
+    ],
+    transitions: [
+      { id: 'loaded', from: 'loading', to: 'idle', label: 'media.loaded' },
+      { id: 'place', from: 'idle', to: 'pressed', label: 'place or return' },
+      { id: 'audition', from: 'idle', to: 'auditioning', label: 'at cue' },
+      { id: 'end', from: 'pressed', to: 'idle', label: 'end hold' },
+      { id: 'return', from: 'auditioning', to: 'idle', label: 'return' },
+      { id: 'handoff', from: 'auditioning', to: 'idle', label: 'Play while held' },
+      { id: 'arm', from: 'idle', to: 'armed', label: 'CUP: place / return silently' },
+      { id: 'start', from: 'armed', to: 'idle', label: 'start' },
+      { id: 'cancel', from: 'armed', to: 'idle', label: 'cancel / mode' },
+    ],
+  }));
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.check.ok, true, JSON.stringify(result.check.composition.issues));
+  assert.equal(allPoints(result.svg, 'armed', 'idle').length, 2, 'distinct start and cancellation exits remain separate');
+  const labels = edgeLabels(result.svg);
+  for (const id of ['loaded', 'place', 'audition', 'end', 'return', 'handoff', 'arm', 'start', 'cancel']) {
+    assert.equal(labels.filter((label) => label.id === id).length, 1, `one visible label for ${id}`);
+  }
+});
+
 test('main path is one row, loops arc above it and other states sit one row per step below', () => {
   const result = render(base({
     mainPath: ['draft', 'review', 'done'],

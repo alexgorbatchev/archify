@@ -1,6 +1,6 @@
 {
   "name": "archify",
-  "version": "3.2.1-dev.3",
+  "version": "3.2.1-dev.4",
   "private": true,
   "type": "module",
   "description": "JSON-IR diagram renderers (architecture / workflow / sequence / dataflow / lifecycle / erd / class / tree / timeline / waterfall).",
@@ -33,6 +33,6 @@
     "simple-icons": "16.28.0"
   },
   "overrides": {
-    "fast-uri": "^3.1.7"
+    "fast-uri": "^3.1.9"
   }
 }

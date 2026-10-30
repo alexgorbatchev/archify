@@ -4,13 +4,15 @@ All notable changes are documented here. Format loosely follows [Keep a Changelo
 
 ## [Unreleased]
 
-> Development identity: `v3.2.1-dev.3`. Not a stable release.
+> Development identity: `v3.2.1-dev.4`. Not a stable release.
 
 ### Added
 - **Authored node explanations in the Semantic Passport.** Architecture, Workflow, Sequence, Dataflow and Lifecycle nodes may carry optional plain-text explanations up to1200 characters. Explain opens a viewport-bounded reading face with scrollable prose and a reachable Back action; Escape restores the Passport. Prose remains outside canonical SVG and visual exports, and existing diagram geometry is preserved.
 - **Cross-diagram navigation.** Nodes may list sibling `.html` targets via `drilldowns` or a one-entry `href` shorthand. One child uses a native SVG link and visible mark (click follows, Alt-click focuses). Several children keep click-to-focus, with Passport listing every target and Ctrl/double-click opening the first. Child pages can author `meta.parentHref` for header Back; the Viewer also accepts `?from=`.
 
 ### Fixed
+
+- **URI dependency validation.** Resolve both development dependency trees to fast-uri 3.1.9, covering encoded schemes, ambiguous hosts, relative path normalization and suffix references while preserving Ajv relative-reference validation.
 
 - **Lifecycle labels beside crossing routes.** Search additional positions along vertical runs when the midpoint is crowded, preserving every transition and the existing route, state and label clearance checks.
 

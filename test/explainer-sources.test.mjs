@@ -13,6 +13,11 @@ function fixture(t, files = {}) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
   const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', env, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
   git('init');
+  // Adversarial source fixtures must reach the application's secret validator,
+  // independently of personal hooks installed outside this temporary repo.
+  git('config', 'core.hooksPath', path.join(root, '.git', 'hooks'));
+  git('config', 'hook.pre-commit.enabled', 'false');
+  git('config', 'hook.commit-msg.enabled', 'false');
   git('config', 'user.name', 'Archify Tests');
   git('config', 'user.email', 'archify@example.test');
   git('remote', 'add', 'origin', 'https://github.com/example/explainer');

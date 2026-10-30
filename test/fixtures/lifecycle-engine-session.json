@@ -1,0 +1,376 @@
+{
+  "schema_version": 3,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Engine Session Lifecycle",
+    "output": "docs/internal/architecture/machines/engine-session.html",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "git@github.com:alexgorbatchev/engine-ui.git",
+      "link_mode": "local-only",
+      "revision": "5e7faa1a4233d0682e31a387b3fddc49b7e26044"
+    }
+  },
+  "mainPath": ["disconnected", "connecting", "ready"],
+  "states": [
+    {
+      "id": "disconnected",
+      "type": "start",
+      "label": "Disconnected",
+      "sublabel": "entry aborts the session controller",
+      "tag": "initial",
+      "step": "01",
+      "sources": [
+        {
+          "path": "src/machines/engineSessionMachine.ts",
+          "line": 212,
+          "end_line": 214,
+          "label": "disconnected state"
+        },
+        {
+          "path": "src/machines/engineSessionMachine.ts",
+          "line": 198,
+          "end_line": 210,
+          "label": "initial + root connect/disconnect"
+        },
+        {
+          "path": "src/machines/engineSessionMachine.ts",
+          "line": 101,
+          "end_line": 107,
+          "label": "endSession / clearJobs"
+        }
+      ]
+    },
+    {
+      "id": "connecting",
+      "type": "active",
+      "label": "Connecting",
+      "sublabel": "invokes connectEngineSession",
+      "tag": "tag: connecting",
+      "step": "02",
+      "sources": [
+        {
+          "path": "src/machines/engineSessionMachine.ts",
+          "line": 215,
+          "end_line": 229,
+          "label": "connecting state"
+        },
+        {
+          "path": "src/machines/connectEngineSession.ts",
+          "line": 15,
+          "end_line": 57,
+          "label": "connectEngineSession actor"
+        },
+        {
+          "path": "src/machines/engineSessionMachine.ts",
+          "line": 81,
+          "end_line": 91,
+          "label": "abortSession / startSession"
+        }
+      ]
+    },
+    {
+      "id": "ready",
+      "type": "success",
+      "label": "Connected · ready",
+      "sublabel": "jobs: monitoring · libraries: current",
+      "tag": "parallel",
+      "step": "03",
+      "sources": [
+        {
+          "path": "src/machines/engineSessionMachine.ts",
+          "line": 112,
+          "end_line": 324,
+          "label": "followers, retention and ready jobs region"
+        },
+        {
+          "path": "src/machines/watchConnectionFailures.ts",
+          "line": 5,
+          "end_line": 17,
+          "label": "watchConnectionFailures actor"
+        },
+        {
+          "path": "src/machines/followJob.ts",
+          "line": 9,
+          "end_line": 32,
+          "label": "followJob actor"
+        }
+      ]
+    },
+    {
+      "id": "refreshing",
+      "type": "active",
+      "label": "Ready · refreshing libraries",
+      "sublabel": "invokes refreshLibraries",
+      "tag": "libraries region",
+      "sources": [
+        {
+          "path": "src/machines/engineSessionMachine.ts",
+          "line": 325,
+          "end_line": 368,
+          "label": "libraries region"
+        },
+        {
+          "path": "src/machines/refreshLibraries.ts",
+          "line": 6,
+          "end_line": 9,
+          "label": "refreshLibraries actor"
+        },
+        {
+          "path": "src/machines/engineSessionMachine.ts",
+          "line": 250,
+          "end_line": 253,
+          "label": "inherited connection.lost"
+        }
+      ]
+    },
+    {
+      "id": "reconnecting",
+      "type": "active",
+      "label": "Connected · reconnecting",
+      "sublabel": "old catalog visible, no requests",
+      "tag": "tag: connecting",
+      "sources": [
+        {
+          "path": "src/machines/engineSessionMachine.ts",
+          "line": 371,
+          "end_line": 385,
+          "label": "reconnecting state"
+        },
+        {
+          "path": "src/machines/engineSessionMachine.ts",
+          "line": 232,
+          "end_line": 239,
+          "label": "connected connect handler"
+        },
+        {
+          "path": "src/machines/engineSessionMachine.ts",
+          "line": 112,
+          "end_line": 115,
+          "label": "stopFollowers on leaving ready"
+        }
+      ]
+    }
+  ],
+  "transitions": [
+    {
+      "id": "disconnected-connecting",
+      "from": "disconnected",
+      "to": "connecting",
+      "label": "connect"
+    },
+    {
+      "id": "connecting-ready",
+      "from": "connecting",
+      "to": "ready",
+      "label": "done",
+      "variant": "emphasis"
+    },
+    {
+      "id": "connecting-connecting",
+      "from": "connecting",
+      "to": "connecting",
+      "label": "connect"
+    },
+    {
+      "id": "connecting-disconnected-error",
+      "from": "connecting",
+      "to": "disconnected",
+      "label": "error",
+      "variant": "security"
+    },
+    {
+      "id": "connecting-disconnected-quit",
+      "from": "connecting",
+      "to": "disconnected",
+      "label": "disconnect"
+    },
+    {
+      "id": "ready-refreshing",
+      "from": "ready",
+      "to": "refreshing",
+      "label": "library job succeeded",
+      "variant": "dashed"
+    },
+    {
+      "id": "refreshing-ready",
+      "from": "refreshing",
+      "to": "ready",
+      "label": "done / error"
+    },
+    {
+      "id": "refreshing-refreshing",
+      "from": "refreshing",
+      "to": "refreshing",
+      "label": "library job succeeded",
+      "variant": "dashed"
+    },
+    {
+      "id": "ready-reconnecting",
+      "from": "ready",
+      "to": "reconnecting",
+      "label": "connect"
+    },
+    {
+      "id": "refreshing-reconnecting",
+      "from": "refreshing",
+      "to": "reconnecting",
+      "label": "connect"
+    },
+    {
+      "id": "reconnecting-reconnecting",
+      "from": "reconnecting",
+      "to": "reconnecting",
+      "label": "connect"
+    },
+    {
+      "id": "reconnecting-ready",
+      "from": "reconnecting",
+      "to": "ready",
+      "label": "done",
+      "variant": "emphasis"
+    },
+    {
+      "id": "ready-disconnected-lost",
+      "from": "ready",
+      "to": "disconnected",
+      "label": "connection.lost",
+      "variant": "security"
+    },
+    {
+      "id": "ready-disconnected-quit",
+      "from": "ready",
+      "to": "disconnected",
+      "label": "disconnect"
+    },
+    {
+      "id": "refreshing-disconnected-lost",
+      "from": "refreshing",
+      "to": "disconnected",
+      "label": "connection.lost",
+      "variant": "security"
+    },
+    {
+      "id": "refreshing-disconnected-quit",
+      "from": "refreshing",
+      "to": "disconnected",
+      "label": "disconnect"
+    },
+    {
+      "id": "reconnecting-disconnected-error",
+      "from": "reconnecting",
+      "to": "disconnected",
+      "label": "error",
+      "variant": "security"
+    },
+    {
+      "id": "reconnecting-disconnected-quit",
+      "from": "reconnecting",
+      "to": "disconnected",
+      "label": "disconnect"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Helper actors",
+      "items": [
+        "connectEngineSession (Connecting, Reconnecting): reads the catalog and active libraries, then restores this tab's saved job IDs; expired jobs are dropped silently and an offline job read rejects the attempt",
+        "watchConnectionFailures (Ready): subscribes to the query cache and sends connection.lost when any engine read for this endpoint or its origin fails with a connection failure",
+        "followJob (Ready, one per job as job:<id>): reports job.updated, job.settled or job.followFailed; stopped when Ready exits or, once every retained job is active, its saved ID is evicted",
+        "refreshLibraries (Refreshing): re-reads active libraries with no cache reuse"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Transition effects",
+      "items": [
+        "connect aborts the session controller and starts a new attempt; from Connecting or Reconnecting it replaces the pending one; leaving Ready stops followers and the watcher",
+        "done stores the engine, catalog, libraries and restored jobs; entering Ready follows queued and running jobs",
+        "library job succeeded: job.accepted or job.updated where a library create, delete, move or undo job first reaches succeeded; it restarts a running refresh",
+        "Refresh done stores libraries; a non-connection refresh error sets a notice and returns to Ready",
+        "connection.lost comes from the watcher or is raised by an offline failure, job.followFailed or refresh error; connect errors show connection_failed"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Notices, jobs and persistence",
+      "items": [
+        "In Ready, job.accepted saves IDs newest first (128 max) and follows; job.updated records; job.settled unwatches; job.resume re-follows a known job; an expired job is forgotten; other failures become coded notices",
+        "error.reported and error.dismissed set or clear the notice in every state",
+        "Only monitored job IDs persist, per endpoint, in sessionStorage; useEngine (EngineApp) sends requests only in Connected · ready",
+        "disconnect clears catalog, libraries, jobs and notice; connection.lost keeps the last job list; Reconnecting keeps the old catalog visible"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Bounded job retention",
+      "items": [
+        "Accepting a job keeps the newest 128 saved IDs, dropping the oldest settled job first as Engine CLI does; an active job and its follower leave only when every retained job is active. Eviction never cancels server jobs",
+        "Late updates for evicted IDs leave retained jobs unchanged; evicted jobs leave before updateJobs applies its bound; ordering drops jobs absent from saved IDs; retainJobIds, updateJobs and savedJobIds share MAX_JOBS"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Hook lifetime: reviewed addition",
+      "items": [
+        "Reviewed addition at 287b5ef, separate from the original pinned source evidence; committed source links are in the architecture index. The XState states and server-job ownership are unchanged",
+        "useActorLifetime owns a hook cancellation signal: React cleanup aborts pending connect and terminal-job waits; effect reconnection creates a fresh scope, including StrictMode",
+        "Disposed callbacks cannot reconnect or submit. Cancelled reads resolve without a result; perform rejects through EngineError. UI disposal does not cancel accepted server jobs"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Saved-job restoration: reviewed addition",
+      "items": [
+        "Reviewed addition at 51a7706, separate from the original pinned source evidence; committed source links are in the architecture index. The session states and server-job ownership are unchanged",
+        "connectEngineSession uses p-map with four concurrent saved-job reads and the connection actor's signal; replacing or stopping the attempt prevents queued reads from starting",
+        "Each read uses engineJobQuery and fetchEngineQuery: cancellation releases this attempt's query observer while another owner can retain the shared request",
+        "Expired IDs are removed from saved history only after the whole restore attempt completes without cancellation; an aborted attempt cannot persist partial cleanup",
+        "EngineClient preserves body-read cancellation instead of converting it into invalid-response or unavailable errors"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Query ownership: reviewed addition",
+      "items": [
+        "Reviewed addition at 4e1910cd22136aa2a475a64e645972307ba9d790, separate from the original pinned source evidence; committed source links are in the architecture index. The session states, server jobs, and persistent saved-job IDs keep their existing owners.",
+        "engineKeys owns the shared query-key families. Catalog requests use the server origin, so different libraries on one server share a catalog; collection tracks, staging, jobs, performance and beat grids retain the full library endpoint. Desktop checks additionally include the connection observation generation.",
+        "Typed queryOptions factories bind these keys to EngineClient reads and forward the native query signal. Library opening uses shared mutationOptions and invalidates that server origin’s opened-library query after success.",
+        "watchConnectionFailures uses engineKeys.isForEndpoint to observe failures for the current library endpoint or its shared server origin. Cancellation still releases only the caller’s observer through fetchEngineQuery; another observer may keep a shared request alive."
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Navigation and cancellation: committed 2b1d6e1",
+      "items": [
+        "Independently reviewed addition at 2b1d6e10b5eece1a666b22394bab878394c632bb, separate from the original pinned evidence and the earlier query-ownership addition. Committed source links are in the architecture index; uncommitted identity and test-warning changes are outside this evidence.",
+        "useLibraryNavigation uses native useMutation with the same openLibraryMutation options as useLibraryRoute and useLibraryOpening. After opening on the selected server, it reads fresh opened-library and preference listings before deriving the library link and navigating.",
+        "useEngine sends cancellation through native useMutation while retaining the session actor and React lifetime signals. A successful response cancels the exact in-flight job query, replaces its cached job, and updates the session only while its signal remains active. Confirmed uncancelled failures still use job_cancel_failed guidance.",
+        "This integration adds no session state, actor, endpoint, persistent store, or database owner. Query observers, server jobs, and Engine API protection retain their existing ownership."
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Discovery commands: committed 2869978",
+      "items": [
+        "Independently reviewed addition at 286997860c1ccb2aa94e5ece182d616b538f4e8e, separate from the original pinned evidence. Committed source links are in the architecture index; later consumer changes are outside this evidence.",
+        "library.discover remembers libraries on the server. runLibraryDiscovery submits it through an origin-bound native MutationObserver; the shared mutation cache coalesces pending commands across owners and Refresh. Passive query observers never submit on invalidation, focus, or ordinary rerenders.",
+        "Only the route server activates discovery automatically: route/capability activation, browser online reconnect, and a stable ready-session generation check the shared 30-second freshness window. Explicit Refresh can also discover on an inactive server, including after its refreshed catalog first advertises the operation.",
+        "Accepted discovery jobs continue across sidebar unmounts and route changes. Mutation callbacks retain the last successful library result and safe failure code in the origin query cache; failures preserve the last-success timestamp, and success clears the failure. Resetting the settled command observer permits native mutation garbage collection without losing this observation.",
+        "Discovery command ownership adds no XState state, actor, API endpoint, or persistent store. Collection reads retain their library-endpoint isolation; Engine CLI retains library registration and database ownership."
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Rating coherence: reviewed addition",
+      "items": [
+        "Separately reviewed at 078d5c5230e2d02c4057dd3286b1a94189aef6dd; the original session graph, source pins and earlier ownership additions remain unchanged. TrackRating uses the same protected track.update collection-edit path for deck and collection controls.",
+        "After the write settles, TrackRating projects only the confirmed exact rating field into the existing endpoint/id-scoped detail cache, then awaits the active exact query with cancelRefetch false: https://github.com/alexgorbatchev/engine-ui/blob/078d5c5230e2d02c4057dd3286b1a94189aef6dd/src/components/TrackRating.tsx#L18-L46",
+        "A successful write or undo invalidates endpoint track queries through followJob, cancelling older detail reads before their replacements. The rating control joins the current read; a failed detail refetch preserves the confirmed cache value: https://github.com/alexgorbatchev/engine-ui/blob/078d5c5230e2d02c4057dd3286b1a94189aef6dd/src/machines/followJob.ts#L10-L29",
+        "Only an in-flight submission overlays stars. Refreshed same-track data and undo stay authoritative in the native Query cache. Clear confirmation and live Desktop protection reuse existing submission/edit actors; staged previews remain read-only. No second accepted-value store or persistence owner is added."
+      ]
+    }
+  ]
+}

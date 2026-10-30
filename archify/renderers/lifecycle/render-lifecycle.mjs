@@ -832,6 +832,13 @@ function placeLabels({ routes, contentRight }) {
         for (const side of sides) {
           for (const shift of [0, -10, 10]) candidates.push(at(x + side * (LABEL_GAP + width / 2), mid + shift));
         }
+        // A crossing can occupy the midpoint while the rest of the run is clear.
+        for (const side of sides) {
+          for (const fraction of [0.35, 0.65, 0.2, 0.8]) {
+            const center = a[1] + (b[1] - a[1]) * fraction;
+            for (const shift of [0, -10, 10]) candidates.push(at(x + side * (LABEL_GAP + width / 2), center + shift));
+          }
+        }
       }
       const horizontal = route.points.slice(1).map((point, index) => [route.points[index], point])
         .find(([a, b]) => Math.abs(a[1] - b[1]) < 0.5 && Math.abs(a[0] - b[0]) > width + 8);

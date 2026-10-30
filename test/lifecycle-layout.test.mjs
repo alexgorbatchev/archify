@@ -18,13 +18,16 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'archify-lifecycle-'));
 process.on('exit', () => fs.rmSync(tmp, { recursive: true, force: true }));
 
 let counter = 0;
-function render(doc) {
+function render(doc, repoRoot) {
   counter += 1;
   const input = path.join(tmp, `case-${counter}.json`);
   const output = path.join(tmp, `case-${counter}.html`);
   fs.writeFileSync(input, JSON.stringify({ ...doc, meta: { ...doc.meta, output: `case-${counter}.html` } }));
   try {
-    execFileSync('node', [path.join(skillRoot, 'renderers/lifecycle/render-lifecycle.mjs'), input, output], { stdio: ['ignore', 'ignore', 'pipe'] });
+    execFileSync('node', [path.join(skillRoot, 'renderers/lifecycle/render-lifecycle.mjs'), input, output], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+      env: { ...process.env, ARCHIFY_REPO_ROOT: repoRoot || '' },
+    });
   } catch (error) {
     return { code: error.status ?? 1, stderr: String(error.stderr || '') };
   }
@@ -117,6 +120,39 @@ test('distinct held-state exits keep labels clear beside crowded vertical routes
   const labels = edgeLabels(result.svg);
   for (const id of ['loaded', 'place', 'audition', 'end', 'return', 'handoff', 'arm', 'start', 'cancel']) {
     assert.equal(labels.filter((label) => label.id === id).length, 1, `one visible label for ${id}`);
+  }
+});
+
+test('the historical engine session graph places every distinct transition label', () => {
+  const doc = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/lifecycle-engine-session.json'), 'utf8'));
+  // Bind the unchanged graph and source badges to a hermetic evidence repository.
+  // The original application's Git objects are not a renderer test dependency.
+  const repoRoot = fs.mkdtempSync(path.join(tmp, 'engine-session-evidence-'));
+  execFileSync('git', ['init', '-q', repoRoot]);
+  execFileSync('git', ['-C', repoRoot, 'remote', 'add', 'origin', doc.meta.repository.url]);
+  const sourceLines = new Map();
+  for (const item of doc.states) {
+    for (const source of item.sources) {
+      sourceLines.set(source.path, Math.max(sourceLines.get(source.path) || 0, source.end_line || source.line));
+    }
+  }
+  for (const [file, lines] of sourceLines) {
+    const target = path.join(repoRoot, file);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, '// Fixture source evidence\n'.repeat(lines));
+  }
+  execFileSync('git', ['-C', repoRoot, 'add', '.']);
+  execFileSync('git', ['-C', repoRoot, '-c', 'user.name=Renderer fixture', '-c', 'user.email=fixture@example.com',
+    'commit', '-qm', 'Source evidence fixture', '--no-gpg-sign']);
+  doc.meta.repository.revision = execFileSync('git', ['-C', repoRoot, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  const result = render(doc, repoRoot);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.check.ok, true, JSON.stringify(result.check.composition.issues));
+  const labels = edgeLabels(result.svg);
+  for (const item of doc.states) assert.match(result.svg, new RegExp(`data-node-id="${item.id}"`));
+  for (const transition of doc.transitions) {
+    assert.match(edgePath(result.svg, transition.id), new RegExp(`data-edge-from="${transition.from}" data-edge-to="${transition.to}"`));
+    assert.equal(labels.filter((label) => label.id === transition.id).length, 1, `one visible label for ${transition.id}`);
   }
 });
 
@@ -523,10 +559,25 @@ test('long transition notes are identified in width and placement diagnostics wi
   assert.equal(fs.readFileSync(input, 'utf8'), source, 'diagnosis preserves every authored condition');
 });
 
-test('an inherently too-wide lifecycle reports its budget and bounded spacing advice', () => {
+test('an inherently too-wide lifecycle reports its budget and width-driving text', () => {
   const cli = fileURLToPath(new URL('../archify/bin/archify.mjs', import.meta.url));
   const fixture = fileURLToPath(new URL('./fixtures/lifecycle-crowded-wide.json', import.meta.url));
   const result = spawnSync(process.execPath, [cli, 'validate', 'lifecycle', fixture, '--json'], { encoding: 'utf8' });
+  assert.notEqual(result.status, 0);
+  const diagnostic = JSON.parse(result.stdout).diagnostics.find((entry) => entry.code === 'lifecycle/too-wide');
+  assert.ok(diagnostic, result.stdout);
+  assert.ok(diagnostic.evidence.viewBoxWidth > diagnostic.evidence.budgetPx);
+  assert.match(diagnostic.supportedFixes.join(' '), /width-driving main-path transition text/);
+  assert.match(diagnostic.supportedFixes.join(' '), /preserve every condition/);
+});
+
+test('crowded too-wide lifecycle notes retain bounded spacing advice', () => {
+  const cli = fileURLToPath(new URL('../archify/bin/archify.mjs', import.meta.url));
+  const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/lifecycle-crowded-wide.json'), 'utf8'));
+  fixture.transitions.find((transition) => transition.id === 't-no-envelope').note = 'Only after a completed plan returns no valid result envelope';
+  const input = path.join(tmp, 'crowded-wide-note.json');
+  fs.writeFileSync(input, JSON.stringify(fixture));
+  const result = spawnSync(process.execPath, [cli, 'validate', 'lifecycle', input, '--json'], { encoding: 'utf8' });
   assert.notEqual(result.status, 0);
   const diagnostic = JSON.parse(result.stdout).diagnostics.find((entry) => entry.code === 'lifecycle/too-wide');
   assert.ok(diagnostic, result.stdout);

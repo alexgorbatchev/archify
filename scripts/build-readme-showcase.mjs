@@ -305,6 +305,12 @@ async function stopChrome(chrome, profileRoot, timeoutMs = 5000) {
 
 export { PipeCdp, stopChrome, releaseChildStreams };
 
+export function launchChrome(chromePath, args, { env = process.env, uid = process.getuid?.(), spawnCommand = spawn } = {}) {
+  const chromeArgs = [...args];
+  if (uid === 0 || env.ARCHIFY_CHROME_NO_SANDBOX === '1') chromeArgs.unshift('--no-sandbox');
+  return spawnCommand(chromePath, chromeArgs, { env, stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] });
+}
+
 async function captureFrames(chromePath, tempRoot) {
   const profileRoot = path.join(tempRoot, 'profile');
   const framesRoot = path.join(tempRoot, 'frames');
@@ -319,9 +325,7 @@ async function captureFrames(chromePath, tempRoot) {
     '--disable-renderer-backgrounding', '--force-device-scale-factor=1',
     `--window-size=${width},${height}`, `--user-data-dir=${profileRoot}`, 'about:blank',
   ];
-  if (typeof process.getuid === 'function' && process.getuid() === 0) chromeArgs.unshift('--no-sandbox');
-
-  const chrome = spawn(chromePath, chromeArgs, { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] });
+  const chrome = launchChrome(chromePath, chromeArgs);
   let chromeErrors = '';
   chrome.stderr.setEncoding('utf8');
   chrome.stderr.on('data', chunk => { chromeErrors = `${chromeErrors}${chunk}`.slice(-8000); });

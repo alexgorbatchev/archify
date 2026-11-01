@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { esc, renderDefinitions, renderSemanticSigil, textUnits, SEMANTIC_SIGIL_FOOTPRINT, SOURCE_BADGE_FOOTPRINT } from '../shared/utils.mjs';
-import { animateAttr, focusEdgeAttrs, focusNodeAttrs, focusNodeTitle, loadDiagramWithBrandMarks, writeDiagram, svgAccessibleText, svgRootAttrs } from '../shared/cli.mjs';
+import { animateAttr, focusEdgeAttrs, focusNodeAttrs, focusNodeTitle, loadDiagramWithBrandMarks, renderDrilldownMark, resolveNodeDrilldowns, wrapSingleChildAnchor, writeDiagram, svgAccessibleText, svgRootAttrs } from '../shared/cli.mjs';
 import { throwDiagnosticProblems } from '../shared/diagnostics.mjs';
 import { legendFootprint, resolveLegend, renderLegend as renderResolvedLegend } from '../shared/legend.mjs';
 import { availableNodeTextWidth, fittedNodeFontSize, minimumNodeTextWidth, nodeLabelLayout, nodeTextFit } from '../shared/text-fit.mjs';
@@ -205,7 +205,7 @@ const isFinal = (state) => !outgoing.has(state.id);
 
 // Each round tries ports pulled toward their partners and ports spread evenly,
 // and keeps the placed layout with the fewest bends and short jogs.
-let spacing = { spineGap: 72, rowGap: 44, drop: 58, firstTrack: 34 };
+let spacing = { spineGap: 72, rowGap: 44, drop: 58, firstTrack: 34, trackStep: TRACK_STEP };
 let geometry;
 // Labels that could not be placed at tighter spacing and prompted retries.
 const spacingWideners = new Set();
@@ -226,7 +226,9 @@ for (let round = 0; round < SPACING_ROUNDS; round += 1) {
   const nextMainPathWidth = MARGIN_X * 2 + mainPathStateWidth
     + minimumSpineGaps.reduce((sum, minimum) => sum + Math.max(nextSpineGap, minimum), 0);
   spacing = { spineGap: nextMainPathWidth > readableWidthBudget ? spacing.spineGap : nextSpineGap,
-    rowGap: spacing.rowGap + 28, drop: spacing.drop + 14, firstTrack: spacing.firstTrack + 6 };
+    // Separate the tracks too: a larger row gap alone leaves labels trapped
+    // between adjacent horizontal runs at the original track spacing.
+    rowGap: spacing.rowGap + 28, drop: spacing.drop + 14, firstTrack: spacing.firstTrack + 6, trackStep: spacing.trackStep + 14 };
 }
 
 function routeCost(routes) {
@@ -241,7 +243,7 @@ function routeCost(routes) {
   return cost;
 }
 
-function layout({ spineGap, rowGap, drop, firstTrack, ports: portMode }) {
+function layout({ spineGap, rowGap, drop, firstTrack, trackStep, ports: portMode }) {
   // Main-path x positions: each gap fits its row label.
   let cursor = MARGIN_X;
   mainPath.forEach((id, index) => {
@@ -402,7 +404,7 @@ function layout({ spineGap, rowGap, drop, firstTrack, ports: portMode }) {
     }
     const bottom = rowTop[row] + rowHeights[row];
     const count = assignTracks(runs.filter((run) => run.connector.gap === row));
-    trackY[row] = (track) => bottom + firstTrack + track * TRACK_STEP;
+    trackY[row] = (track) => bottom + firstTrack + track * trackStep;
     if (row + 1 < rowCount) rowTop.push((count ? trackY[row](count - 1) : bottom + firstTrack) + drop);
   }
   const rowBottom = (row) => rowTop[row] + rowHeights[row];
@@ -830,6 +832,13 @@ function placeLabels({ routes, contentRight }) {
         for (const side of sides) {
           for (const shift of [0, -10, 10]) candidates.push(at(x + side * (LABEL_GAP + width / 2), mid + shift));
         }
+        // A crossing can occupy the midpoint while the rest of the run is clear.
+        for (const side of sides) {
+          for (const fraction of [0.35, 0.65, 0.2, 0.8]) {
+            const center = a[1] + (b[1] - a[1]) * fraction;
+            for (const shift of [0, -10, 10]) candidates.push(at(x + side * (LABEL_GAP + width / 2), center + shift));
+          }
+        }
       }
       const horizontal = route.points.slice(1).map((point, index) => [route.points[index], point])
         .find(([a, b]) => Math.abs(a[1] - b[1]) < 0.5 && Math.abs(a[0] - b[0]) > width + 8);
@@ -1017,20 +1026,24 @@ function renderState(state) {
   const finalBorder = isFinal(state)
     ? `\n          <rect x="${state.x + 3}" y="${state.y + 3}" width="${state.width - 6}" height="${state.height - 6}" rx="5" class="${fill}" style="fill: none" stroke-width="1"/>`
     : '';
+  const drilldowns = resolveNodeDrilldowns(state);
   const passport = {
+    drilldowns,
+    href: state.href,
     kind: state.type,
     sublabel: state.sublabel,
     tag: state.tag,
     context: i18nText(lifecycle.meta.locale, 'node.context.lifecycle'),
     ...brandMetadataFor(state),
   };
-  return `        <g ${focusNodeAttrs(state.id, state.label, passport, lifecycle.meta.locale)}>
+  const mark = drilldowns.length ? `\n          ${renderDrilldownMark(state)}` : '';
+  return wrapSingleChildAnchor(`        <g ${focusNodeAttrs(state.id, state.label, passport, lifecycle.meta.locale)}>
           ${focusNodeTitle(state.label, passport)}
           <rect x="${state.x}" y="${state.y}" width="${state.width}" height="${state.height}" rx="8" class="c-mask"/>
           <rect x="${state.x}" y="${state.y}" width="${state.width}" height="${state.height}" rx="8" class="${fill}"${animateAttr(lifecycle.meta, 'node', stateSteps.get(state.id))} stroke-width="1.5"/>${finalBorder}${initial}
           ${renderSemanticSigil(state.type, { icon, x: state.x + 6, y: state.y + labelLayout.sigilY, size: labelLayout.sigilSize })}${brand ? `\n          ${brand}` : ''}${step}
-          <text data-node-label=""${hasSub ? ' data-detail-anchor=""' : ''} x="${state.x + labelLayout.x}" y="${state.y + labelLayout.ys[0]}" class="t-primary" font-size="${labelFont}" font-weight="600" text-anchor="middle">${esc(state.label)}</text>${sub}${tag}
-        </g>`;
+          <text data-node-label=""${hasSub ? ' data-detail-anchor=""' : ''} x="${state.x + labelLayout.x}" y="${state.y + labelLayout.ys[0]}" class="t-primary" font-size="${labelFont}" font-weight="600" text-anchor="middle">${esc(state.label)}</text>${sub}${tag}${mark}
+        </g>`, drilldowns);
 }
 
 function variantOf(transition) {
@@ -1131,4 +1144,5 @@ writeDiagram({
   svg: renderSvg(),
   cards: lifecycle.cards,
   sourceEvidence,
+    diagram: lifecycle,
 });

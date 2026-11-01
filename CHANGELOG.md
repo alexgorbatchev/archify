@@ -4,6 +4,31 @@ All notable changes are documented here. Format loosely follows [Keep a Changelo
 
 ## [Unreleased]
 
+> Development identity: `v3.2.1-dev.4`. Not a stable release.
+
+### Added
+- **Authored node explanations in the Semantic Passport.** Architecture, Workflow, Sequence, Dataflow and Lifecycle nodes may carry optional plain-text explanations up to1200 characters. Explain opens a viewport-bounded reading face with scrollable prose and a reachable Back action; Escape restores the Passport. Prose remains outside canonical SVG and visual exports, and existing diagram geometry is preserved.
+- **Cross-diagram navigation.** Nodes may list sibling `.html` targets via `drilldowns` or a one-entry `href` shorthand. One child uses a native SVG link and visible mark (click follows, Alt-click focuses). Several children keep click-to-focus, with Passport listing every target and Ctrl/double-click opening the first. Child pages can author `meta.parentHref` for header Back; the Viewer also accepts `?from=`.
+
+### Fixed
+
+- **URI dependency validation.** Resolve both development dependency trees to fast-uri 3.1.9, covering encoded schemes, ambiguous hosts, relative path normalization and suffix references while preserving Ajv relative-reference validation.
+
+- **Lifecycle labels beside crossing routes.** Search additional positions along vertical runs when the midpoint is crowded, preserving every transition and the existing route, state and label clearance checks.
+
+- **Lifecycle return-label placement.** Increase horizontal track separation during layout retries so distinct held-state exits retain readable labels without relaxing route, state or label clearance checks.
+
+- **README showcase sandbox opt-out.** Honor the existing explicit `ARCHIFY_CHROME_NO_SANDBOX=1` setting when capturing the README motion proof on hosts without a usable Chromium sandbox.
+
+- **WebP brand container bounds (#602).** Reject missing or out-of-bounds image chunks, including incomplete animation frames, before reporting capture or pinned validation success. Preserve valid lossy, lossless, extended and animated containers and original-byte digests.
+
+- **Architecture Delta translation changes (#600).** Compare reports additions, removals and edits to `meta.translations` as presentation changes; translation-key order and empty-versus-omitted catalogs do not affect presentation classification or entity-change counts.
+
+- **Explainer chart data (#1008, #1011).** Preserve quotes and backslashes in labels, parse quoted multiline CSV records, and normalize ordinary display whitespace without rewriting source data. Malformed records, missing values and unsupported control characters still fail before replacing an existing delivery.
+
+- Viewer toolbar arrow-key and Home/End navigation includes visible Style and Export triggers (#899).
+- Finder and Semantic Lens preserve input-method composition before handling navigation shortcuts (#928).
+
 ## [3.2.0] — 2026-10-18
 
 ### Added
@@ -28,6 +53,7 @@ All notable changes are documented here. Format loosely follows [Keep a Changelo
 - **Explainer long images keep the page's style and theme.** A PNG, WebP or JPG export of a dark page, or of the editorial, product or Swiss style, came out in the light clean style, because the page is drawn inside an SVG where its `<html>` is not `:root`. The export now selects the page root by its own attribute.
 
 - **Blank chart data is an error, not zero.** An empty CSV cell, a JSON `null` or a missing field in a charted column no longer becomes a zero bar. Finalize names the column and row instead.
+
 
 - **Workflow migration semantic contracts (#497).** Layout planning no longer checks full-topology requirements against a temporary graph with routed edges removed. Migrated documents retain their authored contracts and must pass complete validation before publication.
 

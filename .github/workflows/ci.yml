@@ -251,6 +251,7 @@ jobs:
         run: npm run test:webm
         env:
           ARCHIFY_CHROME: ${{ steps.setup-chrome.outputs.chrome-path }}
+          ARCHIFY_CHROME_NO_SANDBOX: '1'
 
   webm-artifact:
     needs: [scope, browser-regression, webm-decode]
@@ -325,21 +326,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          manifest_version="$(node --input-type=module -e 'import fs from "node:fs"; import { validateStableUpdateManifest } from "./archify/scripts/update-contract.mjs"; process.stdout.write(validateStableUpdateManifest(JSON.parse(fs.readFileSync("./docs/skill-updates/archify/stable.json", "utf8"))).version);')"
-          latest_stable_tag="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq 'select(.draft == false and .prerelease == false) | .tag_name')"
+          manifest_identity="$(node --input-type=module -e 'import fs from "node:fs"; import { validateStableUpdateManifest } from "./archify/scripts/update-contract.mjs"; const manifest = validateStableUpdateManifest(JSON.parse(fs.readFileSync("./docs/skill-updates/archify/stable.json", "utf8"))); process.stdout.write([manifest.version, manifest.source.repository].join("\t"));')"
+          IFS=$'\t' read -r manifest_version source_repository <<< "$manifest_identity"
+          release_repository="${source_repository#https://github.com/}"
+          latest_stable_tag="$(gh api "repos/${release_repository}/releases/latest" --jq 'select(.draft == false and .prerelease == false) | .tag_name')"
           if [[ "$latest_stable_tag" != "v${manifest_version}" ]]; then
             echo "::error::stable.json v${manifest_version} must match the latest published stable Release ${latest_stable_tag:-'(missing)'}"
             exit 1
           fi
-          release_asset_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v${manifest_version}" --jq 'select(.draft == false and .prerelease == false) | .assets[] | select(.name == "archify.zip") | .id')"
+          release_asset_id="$(gh api "repos/${release_repository}/releases/tags/v${manifest_version}" --jq 'select(.draft == false and .prerelease == false) | .assets[] | select(.name == "archify.zip") | .id')"
           if [[ -z "$release_asset_id" ]]; then
             echo "::error::v${manifest_version} must have a published stable GitHub Release with an archify.zip asset before stable.json is merged"
             exit 1
           fi
           published_archive="$RUNNER_TEMP/archify-v${manifest_version}.zip"
-          gh api "repos/${GITHUB_REPOSITORY}/releases/assets/${release_asset_id}" \
+          gh api "repos/${release_repository}/releases/assets/${release_asset_id}" \
             -H 'Accept: application/octet-stream' > "$published_archive"
-          git fetch --force --no-tags --depth=1 origin \
+          git fetch --force --no-tags --depth=1 "$source_repository" \
             "refs/tags/v${manifest_version}:refs/tags/v${manifest_version}"
           tagged_archive="$RUNNER_TEMP/archify-tag-v${manifest_version}.zip"
           git show "v${manifest_version}:archify.zip" > "$tagged_archive"
@@ -449,10 +452,6 @@ jobs:
         with:
           chrome-version: stable
           install-dependencies: true
-      - name: Install Chinese font coverage for website screenshots
-        run: |
-          sudo apt-get install --yes --no-install-recommends fonts-noto-cjk
-          fc-match 'sans-serif:lang=zh-cn'
       - name: Verify built website navigation and language continuity
         run: npm run test:browser
         working-directory: website
@@ -475,13 +474,6 @@ jobs:
           ARCHIFY_SITE_INTEGRATION: '1'
           ARCHIFY_CHROME: ${{ steps.website-chrome.outputs.chrome-path }}
           ARCHIFY_CHROME_NO_SANDBOX: '1'
-      - name: Upload homepage visual evidence
-        if: always()
-        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
-        with:
-          name: website-homepage-evidence
-          path: website/.browser-evidence
-          if-no-files-found: warn
       - uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
         with:
           name: website-dist

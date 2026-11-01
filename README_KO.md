@@ -44,6 +44,12 @@ Cursor, Claude Code, Codex CLI, OpenCode에서 사용할 수 있습니다.
 npx skills add tt-a1i/archify -g
 ```
 
+**AI 에이전트에게 맡기기.** 다음 문장을 그대로 붙여 넣으세요.
+
+```text
+Install Archify for me by reading https://raw.githubusercontent.com/tt-a1i/archify/main/llms.txt
+```
+
 에이전트에게 다음과 같이 요청하세요.
 
 ```text
@@ -90,7 +96,7 @@ Archify로 한 페이지로 답해 줘: API P99가 80 ms에서 600 ms로 올랐�
 
 ## 빠른 시작
 
-**현재 안정 버전:** `v3.2.0`. [변경 이력](CHANGELOG.md#320--2026-10-18)을 확인하세요.
+**현재 개발 버전:** `v3.2.1-dev.4` (안정 릴리스가 아닙니다). [변경 이력](CHANGELOG.md#unreleased)을 확인하세요.
 
 ### 1. 설치
 
@@ -98,14 +104,30 @@ Archify로 한 페이지로 답해 줘: API P99가 80 ms에서 600 ms로 올랐�
 npx skills add tt-a1i/archify -g
 ```
 
-<details>
-<summary>다른 설치 방법과 업데이트 확인 동작</summary>
+**AI 에이전트에게 맡기기**
 
-비대화형 Cursor 설치:
+다음 문장을 그대로 붙여 넣으세요.
+
+```text
+Install Archify for me by reading https://raw.githubusercontent.com/tt-a1i/archify/main/llms.txt
+```
+
+확인 없이 설치할 수도 있습니다. `--agent`는 하나, 또는 전환 대상마다 반복합니다 (`cursor`, `codex`, `claude-code`, `opencode`, `github-copilot`). `--copy`는 심볼릭 링크 대신 파일을 복사합니다.
+
+Cursor에만 설치:
 
 ```bash
 npx -y skills add tt-a1i/archify --skill archify --agent cursor --global --copy --yes
 ```
+
+또는 다섯 에이전트가 모두 필요한 경우에만:
+
+```bash
+npx -y skills add tt-a1i/archify --skill archify --agent cursor --agent codex --agent claude-code --agent opencode --agent github-copilot --global --copy --yes
+```
+
+<details>
+<summary>다른 설치 방법과 업데이트 확인 동작</summary>
 
 설치하지 않고 사용해 보기:
 

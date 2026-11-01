@@ -7,6 +7,7 @@ import vm from 'node:vm';
 import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { ChromeVisualBrowser, runVisualCheck } from '../archify/bin/visual-check.mjs';
+import { CdpConnection } from '../archify/bin/cdp.mjs';
 
 // Minimal 1x1 PNG so visual-check's capture path has bytes to persist.
 const PNG_STUB = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
@@ -182,12 +183,12 @@ test('late owner work before the last comparison rejects at 960 instead of false
   assert.equal(result.frame, 960);
 });
 
-// Exercise the actual unchanged PipeCdp implementation and CLI inspection with
+// Exercise the actual CDP connection, pipe transport and CLI inspection with
 // a fake transport/clock. No Chrome process and no real 15-second sleep needed.
 // Frame and wall-clock limits are independent: the CLI can time out before960.
 test('forever-pending joint inspection still fails at the unchanged 15000ms CDP boundary without fallback', async () => {
   const visualSource = fs.readFileSync(path.join(root, 'archify/bin/visual-check.mjs'), 'utf8');
-  const pipeSource = visualSource.slice(visualSource.indexOf('class PipeCdp {'), visualSource.indexOf('export function chromeVisualBrowserArgs'));
+  const pipeSource = visualSource.slice(visualSource.indexOf('class PipeCdp '), visualSource.indexOf('export function chromeVisualBrowserArgs'));
   const timers = new Map();
   let nextTimer = 0;
   let now = 0;
@@ -197,7 +198,7 @@ test('forever-pending joint inspection still fails at the unchanged 15000ms CDP 
     setTimeout(callback, delay) { const id = ++nextTimer; timers.set(id, { callback, deadline: now + delay }); return id; },
     clearTimeout(id) { timers.delete(id); },
   });
-  const PipeCdp = vm.runInContext(pipeSource + '\nPipeCdp', clockContext);
+  const PipeCdp = vm.runInContext(CdpConnection.toString() + '\n' + pipeSource + '\nPipeCdp', clockContext);
   const f = fixture({ readerPending: () => true });
   const localCalls = [];
   f.context.window = { Archify: f.context.Archify };

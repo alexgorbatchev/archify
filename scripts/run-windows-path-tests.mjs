@@ -12,6 +12,7 @@ import {
 } from '../archify/renderers/shared/path-semantics.mjs';
 import { checkForUpdate } from '../archify/scripts/check-update.mjs';
 import { stageCleanSkill } from './stage-clean-skill.mjs';
+import { windowsPathRepositoryEvidence } from './windows-path-evidence.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const skillRoot = path.join(repoRoot, 'archify');
@@ -250,15 +251,8 @@ async function runControlledWindowsPathE2E() {
     assert.equal(JSON.parse(strictDriveCaseCheck.stdout).provenance, 'current');
 
     const driveCaseRepoRoot = driveLetterCaseAlias(repoRoot);
-    const revision = spawnSync('git', ['-C', repoRoot, 'rev-parse', 'HEAD'], {
-      encoding: 'utf8',
-    });
-    requireSuccess('repository revision discovery', revision);
     const evidenceDiagram = JSON.parse(fs.readFileSync(architectureInput, 'utf8'));
-    evidenceDiagram.meta.repository = {
-      url: 'https://github.com/tt-a1i/archify',
-      revision: revision.stdout.trim(),
-    };
+    evidenceDiagram.meta.repository = windowsPathRepositoryEvidence(repoRoot);
     evidenceDiagram.components[0].sources = [{
       path: 'archify/bin/archify.mjs',
       line: 1,
@@ -552,6 +546,7 @@ const fullSuites = [
   'test/sidecar-path-length.test.mjs',
   'test/open-artifact.test.mjs',
   'test/repository-evidence.test.mjs',
+  'test/repository-evidence-replacement.test.mjs',
   'test/renderer-atomic-write.test.mjs',
   'test/atomic-output-recovery.test.mjs',
 ];
